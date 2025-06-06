@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:latest
+    container_name: postgres_bot
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=tasktrackerbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - "./pgdata:/var/lib/postgresql/data"
+    restart: always
+
+  redis:
+    image: redis:latest
+    container_name: redis_bot
+    hostname: redis
+    volumes:
+      - "./redis-data:/data"
+    ports:
+      - "6379:6379"
+    restart: always
+
+  celery_worker:
+    container_name: celery_bot
+    build: 
+      context: .
+    command: celery -A app.utils.celery_worker.app worker -l info
+    volumes:
+      - ".:/bot-app"
+    depends_on:
+      - redis
+
+  app:
+    build: 
+      context: .
+    command: bash -c "alembic upgrade head && python main.py"
+    # ports:
+    volumes:
+      - ".:/bot-app"
+    depends_on:
+      - db
+      - redis
+      - celery_worker
+
+volumes:
+  pgdata:
+  bot-app:
+  redis_data:
