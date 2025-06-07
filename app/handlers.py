@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.text_decorations import html_decoration as htd
 
-from app.requests import set_user_in_db, create_task, get_assigned_tasks, get_all_tasks, get_user_data, change_status, create_team, get_teams_as_creator, get_processed_tasks, stop_task, get_team_executors, get_executors_from_team, get_user_tasks, update_team_executors, get_processed_task, update_executors_in_task
+from app.requests import set_user_in_db, create_task, get_assigned_tasks, get_all_tasks, get_user_data, change_status, create_team, get_teams_as_creator, get_processed_tasks, stop_task, get_team_executors, get_executors_from_team, get_user_tasks, update_team_executors, update_executors_in_task, get_team
 from app.schemas import UserCreate, TaskCreate
 from app.keyboards import main_keyboard, confirm_task_keyboard, team_choose_keyboard, executor_choose_keyboard, processed_tasks_keyboard
 from app.utils.celery_worker import confirm_task, notificate_user
@@ -542,14 +542,19 @@ async def enter_team_name(callback: CallbackQuery, state: FSMContext):
 
 @router.message(NewTeam.team_name)
 async def enter_executors(message: Message, state: FSMContext):
-	await state.update_data(team_name=message.text.strip().lower().capitalize())
+	new_team = await get_team(team_name=message.text.strip().lower())
+	if new_team is not None:
+		await message.answer(text="⚠️ Команда с таким названием уже существует, придумайте другое название")
+		return
+	await state.update_data(team_name=message.text.strip().lower())
 	await message.answer("✍🏻👥 Пожалуйста введите username ваших исполнителей ( без @, через запятую и без пробелов ). Если пока что у вас нет готовых исполнителей, просто напишите точку и отправьте")
 	await state.set_state(NewTeam.executors_username)
 
 @router.message(NewTeam.executors_username)
 async def create_team_handler(message: Message, state: FSMContext):
-	if message.text != ".":
-		executors_username = message.text.strip().split(",")
+	if message.text.replace(" ", "") != ".":
+		executors_username = message.text.replace(" ", "")
+		executors_username = executors_username.strip().split(",")
 	else:
 		executors_username = "."
 	await state.update_data(executors_username=executors_username)
@@ -558,20 +563,28 @@ async def create_team_handler(message: Message, state: FSMContext):
 async def save_team(message: Message, state: FSMContext):
 	data = await state.get_data()
 	[new_team, failed_executors, creator] = await create_team(creator_id=message.from_user.id, team_name=data.get("team_name"), executors_username=data.get("executors_username"))
+	print(new_team, failed_executors, creator)
+	if failed_executors == data.get("executors_username"):
+		message_text = "⚠️ Ни одного пользователя не удалось найти в базе данных, в команде нет ни одного исполнителя. Убедитесь, что вы ввели правильно username каждого пользователя и что они зарегистрированы в боте"
+		for i in failed_executors:
+			message_text += f"\n\n👤 Пользователь с username {htd.bold(f"{i}")} не найден"
+		await message.answer(text=message_text, parse_mode="HTML")
+		await state.clear()
+		return
 	message_text = (
 		f"<b>🎉 Команда {new_team.name} успешно создана! 🎉</b>\n\n"
 		f"👑 Заказчик: @{creator.username}\n"
 		f"👥 Исполнители:\n"
 	)
 	if data.get("executors_username") != ".":
-		message_text += "\n".join([f"- <a href='https://t.me/{username}'>@{username}</a>" for username in data.get("executors_username") if username != message.from_user.username])
+		message_text += "\n".join([f"- <a href='https://t.me/{executor.username}'>@{executor.username}</a>" for executor in new_team.executors])
 	else:
 		message_text += "Исполнители пока не назначены."
 	if failed_executors:
-		message_text += "\n❌ Не удалось добавить некоторых пользователей: "
+		message_text += "\n\n❌ Не удалось добавить некоторых пользователей: "
 		for i in failed_executors:
-			message_text += f"\n\n👤 Пользователь с username {i} не найден"
-		message_text += "\n⚠️ Проверьте, правильно ли вы ввели username пользователя и зарегистрирован ли он вообще. \n➕ Добавьте нового пользователя в меню"
+			message_text += f"\n\n👤 Пользователь с username {htd.bold(f"{i}")} не найден"
+		message_text += "\n\n⚠️ Проверьте, правильно ли вы ввели username пользователя и зарегистрирован ли он вообще. \n➕ Добавьте нового пользователя в меню"
 	await message.answer(text=message_text, parse_mode="HTML")
 	await state.clear()
 

@@ -238,7 +238,7 @@ async def create_team(creator_id: int, team_name: str, executors_username: list[
 		failed_executors = []
 		if executors_username != ".":
 			new_executors = await session.scalars(select(User).where(User.username.in_(executors_username), User.username != creator.username))
-			new_team.executors = new_executors.all()
+			new_team.executors = list(new_executors)
 			for executor in new_team.executors:
 				message_text = (
 					f"🎉 Вы были добавлены в команду *{team_name}*! 🎉\n\n"
@@ -249,8 +249,9 @@ async def create_team(creator_id: int, team_name: str, executors_username: list[
 					message_text += f"- @{member}\n"
 				message_text += "\nУдачи в работе! 🚀"
 				requests.get(f"{settings.BOT_API_URL}{settings.BOT_TOKEN}/sendMessage?chat_id={executor.telegram_id}&text={message_text}&parse_mode=HTML")
-			executors_username_db = [i.username for i in new_team.executors]
-			failed_executors = [i for i in executors_username if i not in executors_username_db]
+			executors_in_db = [i.username for i in new_team.executors]
+			failed_executors = [i for i in executors_username if i not in executors_in_db]
+			print(failed_executors, [i.username for i in new_team.executors], executors_username)
 		session.add(new_team)
 		await session.commit()
 		return [new_team, failed_executors, creator]
@@ -284,3 +285,8 @@ async def update_team_executors(team_id: int, new_executors: list[str]):
 				requests.get(f"{settings.BOT_API_URL}{settings.BOT_TOKEN}/sendMessage?chat_id={executor.telegram_id}&text={message_text}&parse_mode=HTML")
 			return team
 		return None
+	
+async def get_team(team_name: str):
+	async with DatabaseHelper() as session:
+		existing_team = await session.scalar(select(Team).where(Team.name == team_name))
+		return existing_team

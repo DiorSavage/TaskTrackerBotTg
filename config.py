@@ -8,7 +8,7 @@ class RedisSettings(BaseModel):
 	CACHE_EXPIRATION_MIN: int = 5
 
 class BotSettings(BaseSettings):
-	BOT_TOKEN: str = "" #? YOUR BOT TOKEN
+	BOT_TOKEN: str = "" #! YOUR BOT TOKEN
 	
 	DB_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/tasktrackerbot"
 	DB_ECHO: bool = True
